@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>🎮 Pixel Sea Runner</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323:wght@400&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <style>
+        * { box-sizing:border-box; margin:0; padding:0; font-family:'VT323',monospace; user-select:none; image-rendering:pixelated; }
+
+        body { background:#0d1b2a; display:flex; justify-content:center; align-items:center; min-height:100vh; overflow:hidden; padding:10px; }
+
+        #game-container {
+            width:min(95vw,1400px); height:min(95vh,800px);
+            border:6px solid #00e5ff;
+            position:relative; overflow:hidden;
+            box-shadow:0 0 40px rgba(0,229,255,0.4), 0 0 80px rgba(0,229,255,0.15);
+        }
+
+        .screen { position:absolute; width:100%; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; }
+        .hidden { display:none !important; }
+
+        /* ===== PIXEL ART SPRITES via CSS ===== */
+        .sprite { display:inline-block; image-rendering:pixelated; }
+
+        /* Dog sprite (16x16 pixel art via box-shadow) */
+        .dog-sprite {
+            width:8px; height:8px;
+            position:relative;
+            /* drawn as scaled pixel art using background + box-shadow trick */
+        }
+
+        /* ===== PAGE 1 - Start Screen ===== */
+        #screen1 { overflow:hidden; background:#000; }
+
+        .sky-layer {
+            position:absolute; top:0; left:0; width:100%; height:58%;
+            background:linear-gradient(180deg,
+                #0a1628 0%, #0d2040 15%, #1a3a6b 35%,
+                #2d5fa6 55%, #4a8fd4 75%, #87c4ea 90%, #b8dff0 100%);
+        }
+        /* Pixel sun */
+        .pixel-sun {
+            position:absolute; top:8%; right:12%;
+            width:64px; height:64px;
+            background:#ffe066;
+            box-shadow:
+                0 0 0 8px #ffcc00,
+                0 0 0 16px rgba(255,204,0,0.3),
+                0 0 0 24px rgba(255,204,0,0.1);
+            image-rendering:pixelated;
+        }
+        .pixel-sun::before {
+            content:''; position:absolute;
+            top:-24px; left:28px; width:8px; height:16px; background:#ffe066;
+        }
+        .pixel-sun::after {
+            content:''; position:absolute;
+            bottom:-24px; left:28px; width:8px; height:16px; background:#ffe066;
+        }
+
+        /* Stars */
+        .stars { position:absolute; top:0; left:0; width:100%; height:40%; }
+        .star { position:absolute; width:3px; height:3px; background:white; }
+
+        /* Pixel clouds */
+        .cloud-pixel {
+            position:absolute;
+            image-rendering:pixelated;
+        }
+        .cloud-pixel canvas { image-rendering:pixelated; }
+
+        /* Sea layer */
+        .sea-layer {
+            position:absolute; bottom:0; left:0; width:100%; height:45%;
+            background:linear-gradient(180deg, #1565c0 0%, #0d47a1 30%, #062a6e 70%, #031545 100%);
+        }
+        /* Pixel wave rows */
+        .wave-row {
+            position:absolute; width:200%; height:8px;
+            background:repeating-linear-gradient(90deg,
+                transparent 0px, transparent 16px,
+                rgba(255,255,255,0.25) 16px, rgba(255,255,255,0.25) 32px,
+                transparent 32px, transparent 48px,
+                rgba(100,180,255,0.2) 48px, rgba(100,180,255,0.2) 64px
+            );
+            animation:wave-move 3s linear infinite;
+        }
+        .wave-row:nth-child(1) { top:5%; animation-duration:2.8s; }
+        .wave-row:nth-child(2) { top:18%; animation-duration:3.5s; animation-delay:-1s; opacity:0.7; }
+        .wave-row:nth-child(3) { top:32%; animation-duration:4s; animation-delay:-2s; opacity:0.5; }
+        .wave-row:nth-child(4) { top:55%; animation-duration:2.2s; animation-delay:-0.5s; opacity:0.8; }
+        .wave-row:nth-child(5) { top:72%; animation-duration:3.8s; animation-delay:-1.8s; opacity:0.6; }
+        @keyframes wave-move { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+
+        /* Pixel islands in background */
+        .bg-island {
+            position:absolute;
+            image-rendering:pixelated;
+        }
+
+        /* Start content */
+        .start-content { position:relative; z-index:20; text-align:center; }
+        .title {
+            font-size:clamp(42px,7vw,72px); color:#00e5ff;
+            text-shadow:0 0 20px #00e5ff, 0 0 40px #0080ff, 4px 4px 0 #001a33;
+            letter-spacing:4px;
+            background:rgba(0,10,30,0.75);
+            padding:16px 40px; border:4px solid #00e5ff;
+            margin-bottom:16px;
+            animation:flicker 4s infinite;
+        }
+        @keyframes flicker { 0%,95%,100%{opacity:1} 96%{opacity:0.85} 97%{opacity:1} 98%{opacity:0.9} }
+        .subtitle { font-size:22px; color:#7fd8ff; text-shadow:2px 2px #001; margin-bottom:36px; background:rgba(0,0,0,0.5); padding:8px 20px; border:2px solid #005577; }
+        button {
+            font-size:clamp(22px,3.5vw,36px); padding:14px 48px;
+            border:4px solid #00e5ff; cursor:pointer;
+            background:#001f3f; color:#00e5ff;
+            transition:all 0.2s; text-transform:uppercase; letter-spacing:3px;
+            box-shadow:0 0 14px rgba(0,229,255,0.4), inset 0 0 20px rgba(0,229,255,0.05);
+        }
+        button:hover { background:#00e5ff; color:#001f3f; box-shadow:0 0 28px rgba(0,229,255,0.9); transform:scale(1.08); }
+        button:active { transform:scale(0.95); }
+
+        /* ===== PAGE 2 - Lobby ===== */
+        #screen2 {
+            background:linear-gradient(180deg,#0a1628 0%,#1a3a6b 50%,#0d47a1 100%);
+            overflow-y:auto; gap:12px;
+        }
+        #screen2 h1 { color:#00e5ff; text-shadow:3px 3px #001; font-size:clamp(28px,4.5vw,54px); }
+        #screen2 h2 { color:#7fd8ff; font-size:clamp(18px,3vw,36px); }
+        .roomBox { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+        .roomBox input { font-size:clamp(18px,2.5vw,28px); padding:10px 14px; border:4px solid #00e5ff; width:180px; background:#001428; color:#00e5ff; }
+        .roomBox button { padding:10px 28px; font-size:clamp(18px,2.5vw,28px); }
+
+        .animals { display:flex; gap:clamp(12px,2.5vw,36px); flex-wrap:wrap; justify-content:center; }
+        .animalCard {
+            width:clamp(140px,18vw,200px); background:#001428;
+            padding:18px; border:4px solid #005577; text-align:center; cursor:pointer;
+            transition:all 0.25s; box-shadow:0 4px 14px rgba(0,0,0,0.4);
+            position:relative; overflow:hidden;
+        }
+        .animalCard::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,transparent,#00e5ff,transparent); }
+        .animalCard:hover { transform:translateY(-8px); box-shadow:0 12px 24px rgba(0,229,255,0.25); border-color:#00e5ff; }
+        .animalCard.selected { background:#003366; border:4px solid #00e5ff; box-shadow:0 0 20px rgba(0,229,255,0.5); }
+        .animalIcon { font-size:clamp(48px,7vw,72px); animation:bounce 0.8s infinite; display:block; }
+        @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+        .animalName { font-size:clamp(22px,2.8vw,36px); margin:8px 0; color:#7fd8ff; }
+        input[type="text"],input[type="number"] { font-size:clamp(14px,2vw,22px); width:100%; padding:6px 10px; border:3px solid #005577; margin-top:8px; background:#000d1f; color:#7fd8ff; }
+        #status { font-size:clamp(18px,2.5vw,28px); color:#00e5ff; background:rgba(0,20,60,0.8); padding:8px 18px; border:2px solid #005577; }
+
+        /* Room code display */
+        #roomCodeDisplay {
+            display:none; margin-top:4px;
+            background:rgba(0,10,30,0.9); border:4px solid #ffd700;
+            padding:12px 24px; text-align:center;
+            box-shadow:0 0 18px rgba(255,215,0,0.35);
+        }
+        #roomCodeDisplay .rc-label { font-size:clamp(14px,2vw,20px); color:#aaa; margin-bottom:4px; }
+        #roomCodeDisplay .rc-code {
+            font-size:clamp(32px,5vw,56px); color:#ffd700; letter-spacing:10px;
+            text-shadow:0 0 12px rgba(255,215,0,0.6);
+        }
+        #roomCodeDisplay .rc-hint { font-size:clamp(12px,1.6vw,16px); color:#5599aa; margin-top:6px; }
+        #copyRoomBtn {
+            margin-top:6px; font-size:clamp(14px,1.8vw,18px); padding:6px 18px;
+            border:2px solid #ffd700; color:#ffd700; background:transparent;
+            cursor:pointer; letter-spacing:1px;
+        }
+        #copyRoomBtn:hover { background:#ffd700; color:#001; }
+
+        /* ===== PAGE 3 - Game ===== */
+        #screen3 {
+            background:linear-gradient(180deg,#0a1628 0%,#1a3a6b 38%,#1565c0 38%,#0d47a1 100%);
+        }
+
+        /* HUD */
+        .scoreHUD,.timeHUD {
+            position:absolute; top:14px;
+            width:clamp(90px,10vw,130px); height:clamp(60px,9vw,90px);
+            border:4px solid; display:flex; flex-direction:column;
+            justify-content:center; align-items:center;
+            font-size:clamp(14px,2vw,20px); z-index:100;
+            background:rgba(0,5,20,0.85);
+        }
+        .scoreHUD { right:14px; color:#ff4d6d; border-color:#ff4d6d; box-shadow:0 0 12px rgba(255,77,109,0.5); }
+        .timeHUD { right:14px; top:120px; color:#00e5ff; border-color:#00e5ff; box-shadow:0 0 12px rgba(0,229,255,0.4); }
+        #score,#time { font-size:clamp(22px,3.5vw,36px); font-weight:bold; }
+
+        /* Game Area */
+        #gameArea {
+            position:relative;
+            width:min(95vw,1200px); height:min(82vh,680px);
+            border:6px solid #00e5ff;
+            overflow:hidden;
+            box-shadow:0 0 20px rgba(0,229,255,0.3);
+        }
+
+        /* Sky gradient */
+        .pixelSky {
+            position:absolute; top:0; left:0; width:100%; height:38%;
+            background:linear-gradient(180deg,#0a1628 0%,#1a3a6b 60%,#2d5fa6 100%);
+            z-index:0;
+        }
+        /* Moving stars in sky */
+        .sky-stars { position:absolute; top:0; left:0; width:200%; height:38%; z-index:1; }
+
+        /* Pixel sea */
+        .pixelSea {
+            position:absolute; bottom:0; left:0; width:100%; height:62%;
+            background:linear-gradient(180deg,#1565c0 0%,#0d47a1 40%,#062a6e 100%);
+            z-index:2;
+        }
+        .sea-waves {
+            position:absolute; top:0; left:0; width:200%; height:100%;
+            background:repeating-linear-gradient(90deg,
+                transparent 0px, transparent 20px,
+                rgba(255,255,255,0.12) 20px, rgba(255,255,255,0.12) 24px,
+                transparent 24px, transparent 44px,
+                rgba(100,200,255,0.08) 44px, rgba(100,200,255,0.08) 48px
+            );
+            animation:wave-move 2.5s linear infinite;
+            z-index:3;
+        }
+        .sea-waves-2 {
+            position:absolute; top:20%; left:0; width:200%; height:80%;
+            background:repeating-linear-gradient(90deg,
+                transparent 0px, transparent 32px,
+                rgba(255,255,255,0.07) 32px, rgba(255,255,255,0.07) 36px
+            );
+            animation:wave-move 4s linear infinite reverse;
+            z-index:3;
+        }
+
+        /* Lanes */
+        .lane {
+            position:absolute; width:100%; height:33.33%;
+            border-bottom:3px solid rgba(0,229,255,0.3);
+            z-index:10;
+        }
+        .lane1 { top:0; }
+        .lane2 { top:33.33%; }
+        .lane3 { top:66.66%; }
+
+        /* Pixel island platform */
+        .island-platform {
+            position:absolute; left:10px; bottom:4px;
+            width:110px; height:70px; z-index:12;
+        }
+        /* Island shape via CSS pixel art */
+        .island-body {
+            position:absolute; bottom:0; left:10px;
+            width:90px; height:28px;
+            background:#3d6b20;
+            border-top:4px solid #52a825;
+            border-radius:2px 2px 0 0;
+        }
+        .island-body::before {
+            content:''; position:absolute;
+            bottom:0; left:-8px; right:-8px; height:12px;
+            background:#2a4a10; border-radius:0 0 6px 6px;
+        }
+        .island-sand {
+            position:absolute; bottom:4px; left:12px; right:12px; height:10px;
+            background:#d4a847;
+        }
+        .island-palm {
+            position:absolute; bottom:24px; left:50%; transform:translateX(-50%);
+            font-size:36px; line-height:1;
+        }
+        /* water around island */
+        .island-water {
+            position:absolute; bottom:-6px; left:0; right:0; height:10px;
+            background:rgba(21,101,192,0.8);
+        }
+
+        /* Player characters — CSS pixel art sprites */
+        .player {
+            position:absolute; left:44px; z-index:20;
+            bottom:4px;
+            transition:transform 0.08s ease;
+        }
+
+        /* Dog pixel sprite */
+        .pixel-dog {
+            width:48px; height:48px; position:relative;
+            image-rendering:pixelated;
+        }
+        .pixel-dog canvas, .pixel-cat canvas, .pixel-bear canvas {
+            image-rendering:pixelated;
+            width:100%; height:100%;
+        }
+
+        .player:not(.dead) { animation:playerIdle 0.7s infinite; }
+        @keyframes playerIdle { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+        .player.dead { opacity:0.25; filter:grayscale(100%) drop-shadow(0 0 6px red); }
+
+        /* Player name labels */
+        .playerLabel {
+            position:absolute; left:8px; top:6px;
+            background:rgba(0,10,30,0.85); color:#00e5ff;
+            padding:5px 12px; font-size:clamp(14px,1.8vw,20px);
+            border:2px solid #00e5ff; z-index:15; white-space:nowrap;
+            box-shadow:0 0 8px rgba(0,229,255,0.3);
+        }
+
+        /* Pixel palm tree obstacle */
+        .tree { position:absolute; z-index:15; font-size:clamp(36px,5.5vw,60px); filter:drop-shadow(0 3px 6px rgba(0,0,0,0.6)); bottom:4px; }
+
+        /* Waiting overlay */
+        #waiting {
+            position:absolute; width:100%; height:100%;
+            background:rgba(0,5,20,0.9);
+            display:flex; justify-content:center; align-items:center;
+            flex-direction:column; gap:20px; z-index:200;
+            color:#00e5ff; font-size:clamp(22px,3.5vw,44px);
+            text-shadow:0 0 10px #00e5ff;
+        }
+        #waiting.hidden { display:none; }
+        #readyCount { font-size:clamp(28px,5vw,56px); animation:pulse 1s infinite; }
+        @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+
+        /* Distant bg islands */
+        .bg-isle {
+            position:absolute; font-size:clamp(24px,3vw,42px);
+            opacity:0.45; z-index:4;
+            animation:float-isle 6s ease-in-out infinite;
+        }
+        @keyframes float-isle { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+
+        /* Scrolling background clouds in gameplay */
+        .game-cloud {
+            position:absolute; font-size:clamp(20px,3vw,36px);
+            opacity:0.35; z-index:5;
+            animation:cloud-scroll 18s linear infinite;
+            top:4%;
+        }
+        .game-cloud:nth-child(2) { animation-duration:24s; animation-delay:-8s; top:10%; }
+        .game-cloud:nth-child(3) { animation-duration:20s; animation-delay:-14s; top:6%; }
+        @keyframes cloud-scroll { from{left:105%} to{left:-20%} }
+
+        /* ===== PAGE 4 - Result ===== */
+        #screen4 { background:linear-gradient(180deg,#0a1628 0%,#1a3a6b 50%,#0d47a1 100%); }
+        #screen4 h1 { color:#00e5ff; text-shadow:3px 3px #001; font-size:clamp(36px,6vw,64px); margin-bottom:24px; }
+        #leaderboard {
+            width:min(90vw,720px); height:min(55vh,460px);
+            background:rgba(0,10,30,0.9); border:6px solid #00e5ff;
+            padding:18px; overflow-y:auto;
+            box-shadow:0 0 24px rgba(0,229,255,0.4);
+        }
+        .rank {
+            height:clamp(64px,10vh,110px); border:4px solid #00e5ff;
+            background:linear-gradient(90deg,rgba(0,229,255,0.08) 0%,rgba(0,229,255,0.02) 100%);
+            font-size:clamp(16px,2.5vw,28px); display:flex;
+            justify-content:space-between; align-items:center;
+            padding:12px 18px; margin-bottom:12px;
+            animation:slideIn 0.5s ease-out;
+        }
+        @keyframes slideIn { from{transform:translateX(-80%);opacity:0} to{transform:translateX(0);opacity:1} }
+        .rank:nth-child(1) { border-color:#ffd700; background:linear-gradient(90deg,rgba(255,215,0,0.18) 0%,rgba(255,215,0,0.05) 100%); box-shadow:0 0 12px rgba(255,215,0,0.4); }
+        .rank:nth-child(2) { border-color:#b0bec5; background:linear-gradient(90deg,rgba(176,190,197,0.15) 0%,rgba(176,190,197,0.04) 100%); }
+        .rank:nth-child(3) { border-color:#cd7f32; background:linear-gradient(90deg,rgba(205,127,50,0.15) 0%,rgba(205,127,50,0.04) 100%); }
+        .rank-medal { font-size:clamp(28px,4.5vw,46px); min-width:56px; }
+        .rank-info { flex:1; margin-left:14px; color:#7fd8ff; }
+        .rank-info strong { color:#00e5ff; }
+        .rank-score { font-size:clamp(12px,1.8vw,18px); color:#5599aa; }
+        #restartBtn { margin-top:24px; background:#003d1f; color:#00ff88; border-color:#00ff88; box-shadow:0 0 12px rgba(0,255,136,0.3); }
+        #restartBtn:hover { background:#00ff88; color:#001a0d; }
+
+        @media(max-width:768px){
+            .animals { flex-direction:column; gap:12px; }
+            .animalCard { width:180px; }
+        }
+    </style>
+</head>
+<body>
+<div id="game-container">
+
+    <!-- ===== PAGE 1 ===== -->
+    <div id="screen1" class="screen">
+        <div class="sky-layer"></div>
+        <div class="pixel-sun"></div>
+
+        <!-- Pixel clouds drawn on canvas -->
+        <canvas id="cloudCanvas1" width="120" height="48" style="position:absolute;top:9%;left:4%;opacity:0.75;animation:drift1 18s linear infinite;z-index:5;image-rendering:pixelated;"></canvas>
+        <canvas id="cloudCanvas2" width="160" height="56" style="position:absolute;top:16%;right:8%;opacity:0.6;animation:drift2 22s linear infinite;z-index:5;image-rendering:pixelated;"></canvas>
+        <canvas id="cloudCanvas3" width="100" height="40" style="position:absolute;top:6%;left:35%;opacity:0.5;animation:drift1 28s linear infinite;z-index:5;image-rendering:pixelated;"></canvas>
+
+        <style>
+            @keyframes drift1 { 0%{transform:translateX(0)} 100%{transform:translateX(110vw)} }
+            @keyframes drift2 { 0%{transform:translateX(20vw)} 100%{transform:translateX(-160px)} }
+        </style>
+
+        <!-- Background islands -->
+        <canvas id="islandFar" width="80" height="60" style="position:absolute;top:28%;left:18%;z-index:6;opacity:0.6;image-rendering:pixelated;"></canvas>
+        <canvas id="islandMid" width="100" height="72" style="position:absolute;top:25%;right:14%;z-index:6;opacity:0.65;image-rendering:pixelated;"></canvas>
+
+        <div class="sea-layer">
+            <div class="wave-row"></div><div class="wave-row"></div><div class="wave-row"></div>
+            <div class="wave-row"></div><div class="wave-row"></div>
+        </div>
+
+        <div class="start-content">
+            <div class="title">🎮 PIXEL SEA RUNNER 🎮</div>
+            <div class="subtitle">🌊 The ultimate multiplayer island game! 🌊</div>
+            <button id="playBtn">▶ PLAY GAME ▶</button>
+        </div>
+    </div>
+
+    <!-- ===== PAGE 2 - Lobby ===== -->
+    <div id="screen2" class="screen hidden">
+        <h1>🎲 CHARACTER SELECTION</h1>
+        <div class="roomBox">
+            <input id="roomInput" placeholder="ROOM CODE" value="1234">
+            <button id="connectBtn">CONNECT</button>
+        </div>
+        <h2>เลือกตัวละคร</h2>
+        <div class="animals">
+            <div class="animalCard" id="dogCard">
+                <span class="animalIcon">🐶</span>
+                <div class="animalName">หมา</div>
+                <input id="dogName" type="text" placeholder="Player Name">
+            </div>
+            <div class="animalCard" id="catCard">
+                <span class="animalIcon">🐱</span>
+                <div class="animalName">แมว</div>
+                <input id="catName" type="text" placeholder="Player Name">
+            </div>
+            <div class="animalCard" id="bearCard">
+                <span class="animalIcon">🐻</span>
+                <div class="animalName">หมี</div>
+                <input id="bearName" type="text" placeholder="Player Name">
+            </div>
+        </div>
+        <div id="roomCodeDisplay">
+            <div class="rc-label">📢 แชร์รหัสห้องนี้ให้เพื่อน</div>
+            <div class="rc-code" id="rcCode">----</div>
+            <div class="rc-hint">ให้เพื่อนพิมพ์รหัสนี้แล้วกด CONNECT</div>
+            <button id="copyRoomBtn">📋 คัดลอกรหัส</button>
+        </div>
+        <div id="status">ยังไม่เชื่อมห้อง</div>
+        <button id="readyBtn">✓ START GAME ✓</button>
+    </div>
+
+    <!-- ===== PAGE 3 - Game ===== -->
+    <div id="screen3" class="screen hidden">
+        <div class="scoreHUD">SCORE<br><div id="score">0</div></div>
+        <div class="timeHUD">TIME<br><div id="time">0</div></div>
+
+        <div id="gameArea">
+            <div class="pixelSky">
+                <!-- moving stars -->
+                <canvas id="starsCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;image-rendering:pixelated;"></canvas>
+            </div>
+            <div class="pixelSea">
+                <div class="sea-waves"></div>
+                <div class="sea-waves-2"></div>
+            </div>
+
+            <!-- Background distant islands -->
+            <canvas class="bg-isle-canvas" id="bgIsle1" width="64" height="48" style="position:absolute;top:14%;left:25%;z-index:6;opacity:0.4;image-rendering:pixelated;animation:float-isle 7s ease-in-out infinite;"></canvas>
+            <canvas class="bg-isle-canvas" id="bgIsle2" width="80" height="60" style="position:absolute;top:12%;right:20%;z-index:6;opacity:0.45;image-rendering:pixelated;animation:float-isle 9s ease-in-out infinite;animation-delay:-3s;"></canvas>
+
+            <!-- Scrolling clouds -->
+            <canvas id="gc1" width="100" height="40" style="position:absolute;z-index:7;image-rendering:pixelated;"></canvas>
+            <canvas id="gc2" width="130" height="48" style="position:absolute;z-index:7;image-rendering:pixelated;"></canvas>
+
+            <!-- Waiting overlay -->
+            <div id="waiting">
+                ⚓ Waiting for players...
+                <div id="readyCount">0/3</div>
+            </div>
+
+            <!-- Lane 1 - Dog -->
+            <div class="lane lane1">
+                <div class="playerLabel playerName1">Player 1</div>
+                <div class="island-platform">
+                    <div class="island-palm">🌴</div>
+                    <div class="island-body"><div class="island-sand"></div></div>
+                    <div class="island-water"></div>
+                </div>
+                <div id="player1" class="player player1"><canvas id="dogSprite" width="48" height="48" style="image-rendering:pixelated;width:48px;height:48px;"></canvas></div>
+            </div>
+
+            <!-- Lane 2 - Cat -->
+            <div class="lane lane2">
+                <div class="playerLabel playerName2">Player 2</div>
+                <div class="island-platform">
+                    <div class="island-palm">🌴</div>
+                    <div class="island-body"><div class="island-sand"></div></div>
+                    <div class="island-water"></div>
+                </div>
+                <div id="player2" class="player player2"><canvas id="catSprite" width="48" height="48" style="image-rendering:pixelated;width:48px;height:48px;"></canvas></div>
+            </div>
+
+            <!-- Lane 3 - Bear -->
+            <div class="lane lane3">
+                <div class="playerLabel playerName3">Player 3</div>
+                <div class="island-platform">
+                    <div class="island-palm">🌴</div>
+                    <div class="island-body"><div class="island-sand"></div></div>
+                    <div class="island-water"></div>
+                </div>
+                <div id="player3" class="player player3"><canvas id="bearSprite" width="48" height="48" style="image-rendering:pixelated;width:48px;height:48px;"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== PAGE 4 - Result ===== -->
+    <div id="screen4" class="screen hidden">
+        <h1>🏆 GAME OVER & LEADERBOARD 🏆</h1>
+        <div id="leaderboard">
+            <div class="rank">
+                <div class="rank-medal">🥇</div>
+                <div class="rank-info"><strong>Player 1</strong><br><span class="rank-score">Score: 1250 | Time: 02:45</span></div>
+            </div>
+        </div>
+        <button id="restartBtn">⟲ PLAY AGAIN ⟲</button>
+    </div>
+
+</div>
+
+<script>
+// ======= PIXEL ART DRAWING FUNCTIONS =======
+
+function drawCloud(canvas, w, h, color1, color2) {
+    const ctx = canvas.getContext('2d');
+    canvas.width = w; canvas.height = h;
+    ctx.imageSmoothingEnabled = false;
+    const S = 4; // pixel size
+    // Cloud pixel pattern
+    const pattern = [
+        [0,0,1,1,1,0,0,0,1,1,1,1,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
+        [0,1,1,1,1,1,0,1,1,1,1,1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0],
+        [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
+        [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
+    ];
+    pattern.forEach((row, y) => {
+        row.forEach((px, x) => {
+            if (px && x * S < w && y * S < h) {
+                ctx.fillStyle = (x + y) % 2 === 0 ? color1 : color2;
+                ctx.fillRect(x * S, y * S, S, S);
+            }
+        });
+    });
+}
+
+function drawIsland(canvas, w, h) {
+    const ctx = canvas.getContext('2d');
+    canvas.width = w; canvas.height = h;
+    ctx.imageSmoothingEnabled = false;
+    const S = 4;
+    // Simple island: water base, sand, grass, palm trunk, leaves
+    const pattern = [
+        [0,0,0,0,0,0,2,2,2,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0],
+        [0,0,0,1,1,1,4,4,4,1,1,1,0,0,0,0,0,0,0,0],
+        [0,0,0,1,1,4,4,4,4,4,1,1,0,0,0,0,0,0,0,0],
+        [0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0],
+        [0,5,5,5,5,5,5,5,5,5,5,5,5,5,0,0,0,0,0,0],
+    ];
+    const cols = {0:null,1:'#3d6b20',2:'#52a825',3:'#5c3a1e',4:'#d4a847',5:'#1565c0'};
+    pattern.forEach((row, y) => {
+        row.forEach((px, x) => {
+            if (cols[px] && x * S < w && y * S < h) {
+                ctx.fillStyle = cols[px];
+                ctx.fillRect(x * S, y * S, S, S);
+            }
+        });
+    });
+}
+
+function drawPixelAnimal(canvas, type, frame) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 48, 48);
+    ctx.imageSmoothingEnabled = false;
+    const S = 3;
+
+    if (type === 'dog') {
+        // Body
+        ctx.fillStyle = '#e8a04f';
+        ctx.fillRect(3*S,4*S,9*S,5*S);
+        // Head
+        ctx.fillStyle = '#e8a04f';
+        ctx.fillRect(9*S,2*S,5*S,5*S);
+        // Ear
+        ctx.fillStyle = '#c47a22';
+        ctx.fillRect(12*S,1*S,2*S,3*S);
+        ctx.fillRect(10*S,1*S,2*S,2*S);
+        // Eye
+        ctx.fillStyle = '#1a0a00';
+        ctx.fillRect(12*S,3*S,1*S,1*S);
+        // Nose
+        ctx.fillStyle = '#330000';
+        ctx.fillRect(13*S,4*S,2*S,1*S);
+        // Tail
+        ctx.fillStyle = '#c47a22';
+        ctx.fillRect(1*S,3*S,3*S,2*S);
+        ctx.fillRect(1*S,2*S,2*S,2*S);
+        // Legs (animated)
+        ctx.fillStyle = '#c47a22';
+        const legOff = frame % 2 === 0 ? 0 : S;
+        ctx.fillRect(4*S, 9*S, 2*S, 2*S+legOff);
+        ctx.fillRect(7*S, 9*S, 2*S, 2*S+(legOff===0?S:0));
+        ctx.fillRect(10*S,9*S, 2*S, 2*S+legOff);
+        // Belly lighter
+        ctx.fillStyle = '#f5c97e';
+        ctx.fillRect(5*S,5*S,6*S,3*S);
+        // Outline strokes
+        ctx.fillStyle = '#7a4400';
+        ctx.fillRect(3*S,3*S,1*S,1*S); // corner
+    } else if (type === 'cat') {
+        // Body
+        ctx.fillStyle = '#888';
+        ctx.fillRect(3*S,4*S,9*S,5*S);
+        // Head
+        ctx.fillStyle = '#aaa';
+        ctx.fillRect(9*S,2*S,5*S,5*S);
+        // Ears (pointy)
+        ctx.fillStyle = '#888';
+        ctx.fillRect(9*S,0*S,2*S,3*S);
+        ctx.fillRect(12*S,0*S,2*S,3*S);
+        ctx.fillStyle = '#ffb3ba';
+        ctx.fillRect(10*S,0*S,1*S,2*S);
+        ctx.fillRect(12*S,0*S,1*S,2*S);
+        // Eye
+        ctx.fillStyle = '#00aa55';
+        ctx.fillRect(11*S,3*S,2*S,1*S);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(12*S,3*S,1*S,1*S);
+        // Nose
+        ctx.fillStyle = '#ffb3ba';
+        ctx.fillRect(13*S,4*S,1*S,1*S);
+        // Stripes
+        ctx.fillStyle = '#666';
+        ctx.fillRect(4*S,5*S,1*S,3*S);
+        ctx.fillRect(6*S,5*S,1*S,3*S);
+        ctx.fillRect(8*S,5*S,1*S,3*S);
+        // Tail
+        ctx.fillStyle = '#777';
+        ctx.fillRect(1*S,3*S,2*S,1*S);
+        ctx.fillRect(0*S,2*S,2*S,2*S);
+        // Legs
+        ctx.fillStyle = '#888';
+        const legOff2 = frame % 2 === 0 ? 0 : S;
+        ctx.fillRect(4*S,9*S,2*S,2*S+legOff2);
+        ctx.fillRect(7*S,9*S,2*S,2*S+(legOff2===0?S:0));
+        ctx.fillRect(10*S,9*S,2*S,2*S+legOff2);
+        // Belly
+        ctx.fillStyle = '#ddd';
+        ctx.fillRect(5*S,5*S,5*S,3*S);
+    } else if (type === 'bear') {
+        // Body (bigger)
+        ctx.fillStyle = '#7b4f2e';
+        ctx.fillRect(2*S,4*S,11*S,6*S);
+        // Head
+        ctx.fillStyle = '#8b5a32';
+        ctx.fillRect(8*S,1*S,6*S,6*S);
+        // Ears (round)
+        ctx.fillStyle = '#7b4f2e';
+        ctx.fillRect(8*S,0*S,3*S,3*S);
+        ctx.fillRect(12*S,0*S,3*S,3*S);
+        ctx.fillStyle = '#c47a55';
+        ctx.fillRect(9*S,0*S,2*S,2*S);
+        ctx.fillRect(12*S,0*S,2*S,2*S);
+        // Snout
+        ctx.fillStyle = '#c49a74';
+        ctx.fillRect(11*S,4*S,4*S,3*S);
+        // Eyes
+        ctx.fillStyle = '#1a0800';
+        ctx.fillRect(9*S,2*S,2*S,2*S);
+        ctx.fillRect(13*S,2*S,2*S,2*S);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(9*S,2*S,1*S,1*S);
+        ctx.fillRect(13*S,2*S,1*S,1*S);
+        // Nose
+        ctx.fillStyle = '#2a1000';
+        ctx.fillRect(12*S,5*S,2*S,1*S);
+        // Belly
+        ctx.fillStyle = '#c49a74';
+        ctx.fillRect(4*S,5*S,7*S,4*S);
+        // Legs
+        ctx.fillStyle = '#7b4f2e';
+        const legOff3 = frame % 2 === 0 ? 0 : S;
+        ctx.fillRect(3*S,10*S,3*S,2*S+legOff3);
+        ctx.fillRect(7*S,10*S,3*S,2*S+(legOff3===0?S:0));
+        ctx.fillRect(11*S,10*S,3*S,2*S+legOff3);
+    }
+}
+
+// Draw all pixel art on load
+window.addEventListener('load', () => {
+    // Start screen clouds
+    drawCloud(document.getElementById('cloudCanvas1'), 120, 48, '#c8e8ff', '#e8f4ff');
+    drawCloud(document.getElementById('cloudCanvas2'), 160, 56, '#b8dff8', '#d8eeff');
+    drawCloud(document.getElementById('cloudCanvas3'), 100, 40, '#d0eaff', '#eaf4ff');
+    // Start screen islands
+    drawIsland(document.getElementById('islandFar'), 80, 60);
+    drawIsland(document.getElementById('islandMid'), 100, 72);
+    // Game area background islands
+    drawIsland(document.getElementById('bgIsle1'), 64, 48);
+    drawIsland(document.getElementById('bgIsle2'), 80, 60);
+    // Clouds in game
+    drawCloud(document.getElementById('gc1'), 100, 40, '#c0dcf0', '#deeeff');
+    document.getElementById('gc1').style.top = '5%';
+    document.getElementById('gc1').style.left = '20%';
+    drawCloud(document.getElementById('gc2'), 130, 48, '#b0d4ea', '#d0e8fc');
+    document.getElementById('gc2').style.top = '8%';
+    document.getElementById('gc2').style.left = '55%';
+
+    // Initial sprites
+    drawPixelAnimal(document.getElementById('dogSprite'), 'dog', 0);
+    drawPixelAnimal(document.getElementById('catSprite'), 'cat', 0);
+    drawPixelAnimal(document.getElementById('bearSprite'), 'bear', 0);
+
+    // Animate sprites
+    let af = 0;
+    setInterval(() => {
+        af = (af + 1) % 4;
+        drawPixelAnimal(document.getElementById('dogSprite'), 'dog', af);
+        drawPixelAnimal(document.getElementById('catSprite'), 'cat', af);
+        drawPixelAnimal(document.getElementById('bearSprite'), 'bear', af);
+    }, 200);
+
+    // Stars canvas
+    const sc = document.getElementById('starsCanvas');
+    if (sc) {
+        const ga = document.getElementById('gameArea');
+        sc.width = ga ? ga.offsetWidth : 800;
+        sc.height = Math.floor((ga ? ga.offsetHeight : 600) * 0.38);
+        const sctx = sc.getContext('2d');
+        sctx.imageSmoothingEnabled = false;
+        for (let i = 0; i < 40; i++) {
+            sctx.fillStyle = `rgba(255,255,255,${0.3+Math.random()*0.5})`;
+            const sz = Math.random() < 0.7 ? 1 : 2;
+            sctx.fillRect(Math.random()*sc.width, Math.random()*sc.height, sz, sz);
+        }
+    }
+});
+
+// ======= GAME LOGIC (same as original) =======
+let score=0,time=0,alive=true,playerY=0,velocityY=0,gameStarted=false,touchCooldown=false;
+const gravity=1.2,jumpPower=18;
+let gameLoop=null,timeLoop=null,obstacles=[],obstacleSpeed=8,myLane=1;
+let roomId="",myId="p"+Math.floor(Math.random()*1000000),myAnimal="",myName="",players={},useFirebase=false;
+
+const playBtn=document.getElementById("playBtn"),connectBtn=document.getElementById("connectBtn"),
+      roomInput=document.getElementById("roomInput"),readyBtn=document.getElementById("readyBtn"),
+      restartBtn=document.getElementById("restartBtn"),dogCard=document.getElementById("dogCard"),
+      catCard=document.getElementById("catCard"),bearCard=document.getElementById("bearCard"),
+      dogName=document.getElementById("dogName"),catName=document.getElementById("catName"),
+      bearName=document.getElementById("bearName"),gameArea=document.getElementById("gameArea"),
+      waiting=document.getElementById("waiting"),leaderboard=document.getElementById("leaderboard"),
+      status=document.getElementById("status");
+
+function changeScreen(s){document.querySelectorAll(".screen").forEach(x=>x.classList.add("hidden"));document.getElementById("screen"+s).classList.remove("hidden");}
+
+dogCard.onclick=()=>{myAnimal="dog";updateSelectedCard();};
+catCard.onclick=()=>{myAnimal="cat";updateSelectedCard();};
+bearCard.onclick=()=>{myAnimal="bear";updateSelectedCard();};
+function updateSelectedCard(){
+    document.querySelectorAll(".animalCard").forEach(c=>c.classList.remove("selected"));
+    if(myAnimal==="dog")dogCard.classList.add("selected");
+    if(myAnimal==="cat")catCard.classList.add("selected");
+    if(myAnimal==="bear")bearCard.classList.add("selected");
+}
+
+let db;
+try{
+    const fc={apiKey:"AIzaSyCsd7QPRG5eNofLC-BR9GjH0V3XPkLk640",authDomain:"game-dinosaur.firebaseapp.com",projectId:"game-dinosaur",storageBucket:"game-dinosaur.firebasestorage.app",messagingSenderId:"488064752881",appId:"1:488064752881:web:669f6c9fe38244a2a29d50"};
+    firebase.initializeApp(fc);db=firebase.database();useFirebase=true;
+}catch(e){useFirebase=false;}
+
+function connectRoom(){
+    roomId=roomInput.value;
+    if(!roomId){alert("Please enter Room Code");return;}
+    if(useFirebase){
+        db.ref("rooms/"+roomId).on("value",snap=>{let d=snap.val();if(d&&d.players){players=d.players;updateLobby();}if(d&&d.started)startGame();});
+        db.ref("rooms/"+roomId+"/players").on("value",snap=>{players=snap.val()||{};renderPlayers();updateLobby();});
+    }else{
+        let sp=localStorage.getItem("game_players_"+roomId);players=sp?JSON.parse(sp):{};updateLobby();
+    }
+    status.innerHTML="Connected ✓";
+    // Show room code panel
+    const rcd = document.getElementById("roomCodeDisplay");
+    document.getElementById("rcCode").innerHTML = roomId;
+    rcd.style.display = "block";
+}
+
+document.getElementById("copyRoomBtn").onclick = () => {
+    navigator.clipboard.writeText(roomId).then(()=>{
+        const btn = document.getElementById("copyRoomBtn");
+        btn.innerHTML = "✓ คัดลอกแล้ว!";
+        setTimeout(()=>{ btn.innerHTML = "📋 คัดลอกรหัส"; }, 2000);
+    }).catch(()=>{
+        prompt("คัดลอกรหัสห้อง:", roomId);
+    });
+};
+
+function updateLobby(){let c=Object.keys(players).length;status.innerHTML="Players: "+c+"/3";document.getElementById("readyCount").innerHTML=c+"/3";}
+
+readyBtn.onclick=()=>{
+    if(myAnimal===""){alert("Please select a character");return;}
+    if(myAnimal==="dog")myName=dogName.value||"🐶 Player";
+    if(myAnimal==="cat")myName=catName.value||"🐱 Player";
+    if(myAnimal==="bear")myName=bearName.value||"🐻 Player";
+    let pd={name:myName,animal:myAnimal,score:0,time:0,alive:true,ready:true,y:0};
+    if(useFirebase)db.ref("rooms/"+roomId+"/players/"+myId).set(pd);
+    else{players[myId]=pd;localStorage.setItem("game_players_"+roomId,JSON.stringify(players));}
+    changeScreen(3);updateLobby();checkReady();
+};
+
+function checkReady(){
+    setTimeout(()=>{
+        let arr=Object.values(players);
+        if(arr.length>=3&&arr.every(x=>x.ready))startGame();
+    },500);
+}
+
+function startGame(){if(gameStarted)return;gameStarted=true;waiting.classList.add("hidden");startEngine();}
+
+function startEngine(){
+    score=0;time=0;alive=true;playerY=0;velocityY=0;obstacles=[];touchCooldown=false;
+    document.getElementById("score").innerHTML="0";document.getElementById("time").innerHTML="0";
+    renderPlayers();spawnObstacle();
+    timeLoop=setInterval(()=>{if(!alive)return;time++;document.getElementById("time").innerHTML=time;},1000);
+    gameLoop=setInterval(update,1000/60);
+}
+
+window.addEventListener("keydown",e=>{if(e.code==="Space"||e.code==="ArrowUp"){e.preventDefault();jump();}});
+window.addEventListener("touchstart",()=>{if(touchCooldown)return;touchCooldown=true;jump();setTimeout(()=>touchCooldown=false,200);});
+function jump(){if(!alive||playerY!==0)return;velocityY=jumpPower;}
+
+function physics(){velocityY-=gravity;playerY+=velocityY;if(playerY<=0){playerY=0;velocityY=0;}}
+
+function update(){if(!alive)return;physics();moveObstacles();collisionCheck();renderPlayers();updateMe();}
+
+function renderPlayers(){
+    if(!players)return;
+    Object.values(players).forEach((p,i)=>{
+        let el=document.getElementById("player"+(i+1));
+        let nameEl=document.querySelector(".playerName"+(i+1));
+        if(!el||!nameEl)return;
+        // Update sprite inside canvas
+        let cid=['dogSprite','catSprite','bearSprite'][i];
+        let cv=document.getElementById(cid);
+        if(cv){
+            let atype=p.animal||['dog','cat','bear'][i];
+            drawPixelAnimal(cv,atype,Math.floor(Date.now()/200)%4);
+        }
+        el.style.bottom=`${4+p.y}px`;
+        if(p.alive){el.classList.remove("dead");el.style.opacity="1";}
+        else{el.classList.add("dead");el.style.opacity="0.25";}
+        nameEl.innerHTML=p.name;
+    });
+}
+
+function addScore(){score++;document.getElementById("score").innerHTML=score;}
+
+let treeLoop;
+function spawnObstacle(){
+    treeLoop=setInterval(()=>{
+        if(!alive)return;
+        obstacles.push({x:1200,lane:Math.floor(Math.random()*3)+1,passed:false});
+    },1800);
+}
+
+function moveObstacles(){
+    for(let i=0;i<obstacles.length;i++){
+        obstacles[i].x-=obstacleSpeed;
+        if(obstacles[i].x<80&&!obstacles[i].passed){obstacles[i].passed=true;addScore();}
+    }
+    obstacles=obstacles.filter(x=>x.x>-100);
+    renderTrees();
+}
+
+function renderTrees(){
+    document.querySelectorAll(".tree").forEach(x=>x.remove());
+    obstacles.forEach(t=>{
+        let d=document.createElement("div");
+        d.className="tree";
+        if(t.lane===1)d.classList.add("tree1");
+        if(t.lane===2)d.classList.add("tree2");
+        if(t.lane===3)d.classList.add("tree3");
+        d.innerHTML="🌴";d.style.left=t.x+"px";
+        gameArea.appendChild(d);
+    });
+}
+
+function collisionCheck(){
+    if(myAnimal==="dog")myLane=1;
+    if(myAnimal==="cat")myLane=2;
+    if(myAnimal==="bear")myLane=3;
+    for(let t of obstacles){
+        if(t.lane!==myLane)continue;
+        if(t.x>80&&t.x<170&&playerY<50)gameOver();
+    }
+}
+
+function gameOver(){
+    if(!alive)return;
+    alive=false;
+    clearInterval(gameLoop);clearInterval(treeLoop);clearInterval(timeLoop);
+    renderPlayers();updateMe();
+    setTimeout(()=>checkAllDead(),500);
+}
+
+function updateMe(){
+    let mp=players[myId];
+    if(mp){mp.score=score;mp.time=time;mp.alive=alive;mp.y=playerY;}
+}
+
+function checkAllDead(){
+    let allDead=true;
+    Object.values(players).forEach(x=>{if(x.alive)allDead=false;});
+    if(allDead)showResult();
+}
+
+function showResult(){
+    changeScreen(4);
+    let arr=Object.values(players);
+    arr.sort((a,b)=>b.score===a.score?b.time-a.time:b.score-a.score);
+    leaderboard.innerHTML="";
+    const medal=["🥇","🥈","🥉"];
+    arr.forEach((p,i)=>{
+        leaderboard.innerHTML+=`<div class="rank"><div class="rank-medal">${medal[i]||"🏅"}</div><div class="rank-info"><strong>${p.name}</strong><br><span class="rank-score">Score: ${p.score} | Time: ${String(Math.floor(p.time/60)).padStart(2,'0')}:${String(p.time%60).padStart(2,'0')}</span></div></div>`;
+    });
+}
+
+playBtn.onclick=()=>changeScreen(2);
+connectBtn.onclick=()=>connectRoom();
+restartBtn.onclick=()=>{gameStarted=false;location.reload();};
+
+players[myId]={name:"You",animal:"dog",score:0,time:0,alive:true,ready:false,y:0};
+</script>
+</body>
+</html>
